@@ -217,11 +217,12 @@ def main():
         print("Transaction broadcasted to the network.")
         return
         
-    def fieldsExist(utx):
+    def fieldsValidation(client, utx):
         # check if the fields in the transaction exist
         neededFields = {'type', 'input', 'sig', 'output'}
         inputFields = {'id', 'n'}
         outputFields = {'value', 'pub_key'}
+        print("Validating Fields...")
         for field in neededFields:
             if field not in utx:
                 return False
@@ -232,6 +233,69 @@ def main():
             for field in outputFields:
                 if field not in output:
                     return False
+        
+        print("Validating Transaction Type...")
+        # Check if the type is TRANSACTION
+        if utx['type'] != client.TRANSACTION:
+            return False
+        
+        print("Validating Input Block...")
+        # Check if the input is a valid block in the blockchain
+        inputID = utx['input']['id']
+        inputIDX = utx['input']['n']
+        blockchain = client.blockchain
+        blkChainPtr = 0
+        refBlock = None
+
+        for block in blockchain:
+            blkChainPtr += 1
+            if block['id'] == inputID:
+                # get pk paid to, look at input look at sig of utx and try to verify
+                    if len(block['tx']['output']) - 1 <= inputIDX:
+                        outputReferenced = block['tx']['output'][inputIDX]
+                        pub_key = outputReferenced['pub_key']
+                        vk = VerifyingKey.from_string(bytes.fromhex(pub_key))
+
+                        try: 
+                            vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8'))
+                            # validBlock = True
+                            refBlock = block
+                            break
+                        except Exception as e:
+                            continue
+                    else:
+                        return False
+        
+        if refBlock == None:
+            return False
+        
+        # check if the input is unspent
+        for block in blockchain[blkChainPtr:]:
+            inputID = block['id']
+            inputIDX = utx['input']['n']
+            if inputID == refBlock['id'] and inputIDX == utx['input']['n']:
+                return False
+            
+        # check if the input val is equal to the sum of the output
+        inputVal = refBlock['tx']['output'][inputIDX]['value']
+        outputSum = 0
+
+        for output in utx['output']:
+            outputVal = output['value']
+            if outputVal <= 0:
+                print("One or more outpur values is less than or equal to 0.")
+                return False
+            outputSum += outputVal
+
+        if inputVal != outputSum:
+            print("Input coins and output coins do not match.")
+            return False
+    
+        if (len(utx['output']) >= 2 or len(utx['output']) == 0):
+            print("Invalid number of outputs in transaction.")
+            return False
+        # check number of outputs AND each output is greater than 0
+
         return True
         
     def mine_transaction(utx, prev):
@@ -248,16 +312,24 @@ def main():
         prev = lastBlock['id']
         curUtx = None
 
+        curUtx = serverUTX[-1]
+        
+        if fieldsValidation(client, curUtx) == False:
+            print("Error: Invalid transaction.")
+            return
+
         # check if the fields in the transaction exist
 
-        for utx in serverUTX:
-            if fieldsExist(utx) == True:
-                curUtx = utx
-                break
+        # for utx in reversed(serverUTX):
+        #     if fieldsValidation(client, utx) == True:
+        #         curUtx = utx
+        #         break
+
         if curUtx == None:
             print("Error: No valid transactions to mine.")
             return
         
+
         # miners must add a coinbase transaction as the final output of the unverified transaction that they are mining
         print(curUtx) 
         coinbase = {
@@ -272,13 +344,26 @@ def main():
         pow, nonce = mine_transaction(curUtx, prev)
         print("POW: ", pow)
         print("Nonce: ", nonce)
+        blockId = hashlib.sha256(json.dumps(curUtx, sort_keys=True).encode('utf8')).hexdigest()
+
+        # create a block to sumbit to the blockchain
+        newBlock = {
+            "type": client.BLOCK,
+            "id": blockId,
+            "nonce": nonce,
+            "pow": pow,
+            "prev": prev,
+            "tx": curUtx
+        }
+
+        # add the block to the blockchain
+        client.blockchain.append(newBlock)
+        print("Block mined: ", newBlock)
+        client.send_to_nodes(newBlock)
+        print("Block broadcasted to the network.")
         return
 
-        # Can be generated once tx is made
-        # id =  hashlib.sha256(json.dumps(zc_block['tx'], sort_keys=True).encode('utf8')).hexdigest()
-
-
-        
+        # Can be generated once tx is made        
 
     while True:
         os.system('cls' if os.name=='nt' else 'clear')
