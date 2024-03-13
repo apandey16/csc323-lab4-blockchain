@@ -1,4 +1,4 @@
-import sys, time, json, os
+import sys, time, json, os, hashlib
 from ecdsa import VerifyingKey, SigningKey
 from p2pnetwork.node import Node
 
@@ -40,7 +40,7 @@ class ZachCoinClient (Node):
         }
     ]
     utx = []
-  
+#   create transactions first, input the person's public key, and the amount of coins you want to send
     def __init__(self, host, port, id=None, callback=None, max_connections=0):
         super(ZachCoinClient, self).__init__(host, port, id, callback, max_connections)
 
@@ -114,13 +114,124 @@ def main():
     print("Starting ZachCoin™ Client:", sys.argv[1])
     time.sleep(2)
 
+    # def createTransaction(client, recipient, amount):
+    #     myMoney = 0
+    #     nIdx = None
+
+    #     for block in reversed(client.blockchain):
+    #         outputs = block['tx']['output']
+    #         for outputIdx in range(len(outputs)):
+    #             if outputs[outputIdx]['pub_key'] == vk.to_string().hex():
+    #                 myMoney += outputs[outputIdx]["value"]
+    #                 break
+    #     print("My money: ", myMoney)
+                
+    #     if myMoney < int(amount):
+    #         print("Error: Insufficient funds.")
+    #         return
+    #     # else: 
+
+    def createTransaction(client, recipient, amount):
+        # key is the id of the block, value is the (output, idx)
+        transactionsList = {}
+        latestTransaction, ltidx = None, None
+
+        # need to check inputID 
+        for block in client.blockchain:
+            inputID = block['tx']['input']['id']
+            inputIDX = block['tx']['input']['n']
+
+            # print("inputID: ", inputID)
+            # print("inputIDX: ", inputIDX)
+
+            outputs = block['tx']['output']
+
+            for outputIdx in range(len(outputs)):
+                if (outputs[outputIdx]['pub_key'] == 'c26cfef538dd15b6f52593262403de16fa2dc7acb21284d71bf0a28f5792581b4a6be89d2a7ec1d4f7849832fe7b4daa' and outputIdx == inputIDX):
+                    curID = block['id']
+                    
+                    if transactionsList == {}:
+                        transactionsList[curID] = (outputs[outputIdx]['value'], inputIDX)
+                        latestTransaction = curID
+                        ltidx = outputIdx
+                    
+                    else:
+                        transactionsList[curID] = (outputs[outputIdx]['value'], inputIDX)
+                        latestTransaction = curID
+                        ltidx = outputIdx
+                        # print("transactionsList: ", transactionsList)
+                        # print()
+                        if inputID in transactionsList:
+                            del transactionsList[inputID]
+        
+        transactionsDictValues = list(transactionsList.values())
+        myMoney = 0
+        for i in range(len(transactionsDictValues)):
+            myMoney += transactionsDictValues[i][0]
+        print("My money: ", myMoney)
+        print("My transactions: ", (transactionsList))
+
+        if myMoney < int(amount):
+            print("Error: Insufficient funds.")
+            return
+        elif int(amount) <= 0:
+            print("Error: Invalid amount.")
+            return
+        else:
+            newTransaction = {}
+
+            # create a transaction
+            if myMoney - int(amount) > 0:
+                newTransaction = {
+                    "type": client.TRANSACTION,
+                    "input": {
+                        "id": latestTransaction,
+                        "n": ltidx
+                    },
+                    "sig": sk.sign(json.dumps(newTransaction).encode()).hex(),
+                    "output": [
+                        {
+                            "value": int(amount),
+                            "pub_key": recipient
+                        },
+                        {
+                            "value": myMoney - int(amount),
+                            "pub_key": vk.to_string().hex()
+                        }
+                    ]
+                } 
+            else:
+                newTransaction = {
+                    "type": client.TRANSACTION,
+                    "input": {
+                        "id": latestTransaction,
+                        "n": ltidx
+                    },
+                    "sig": sk.sign(json.dumps(newTransaction).encode()).hex(),
+                    "output": [
+                        {
+                            "value": int(amount),
+                            "pub_key": recipient
+                        }
+                    ]
+                } 
+                
+            # add the transaction to the UTX pool
+            client.utx.append(newTransaction)
+            print("Transaction created: ", newTransaction)
+            client.send_to_nodes(newTransaction)
+            print("Transaction broadcasted to the network.")
+            return
+                
+        
+
     while True:
         os.system('cls' if os.name=='nt' else 'clear')
         slogan = " You can't spell \"It's a Ponzi scheme!\" without \"ZachCoin\" "
         print("=" * (int(len(slogan)/2) - int(len(' ZachCoin™')/2)), 'ZachCoin™', "=" * (int(len(slogan)/2) - int(len('ZachCoin™ ')/2)))
         print(slogan)
         print("=" * len(slogan),'\n')
-        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\nEnter your choice -> ")
+        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\t3: Create a new transaction\n\nEnter your choice -> ")
         try:
             x = int(x)
         except:
@@ -134,6 +245,15 @@ def main():
             print(json.dumps(client.blockchain, indent=1))
         elif x == 2:
             print(json.dumps(client.utx, indent=1))
+        elif x == 3:
+            print("\nEnter the recipient's public key: ")
+            recipient = input()
+            print("Enter the amount of ZachCoins™ to send: ")
+            amount = input()
+            print("Creating transaction...")
+            #Create a transaction
+            createTransaction(client, recipient, amount)
+            
         # TODO: Add options for creating and mining transactions
         # as well as any other additional features
 
