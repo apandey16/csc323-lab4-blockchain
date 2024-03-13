@@ -1,3 +1,5 @@
+from Crypto.Cipher import AES
+from Crypto import Random
 import sys, time, json, os, hashlib
 from ecdsa import VerifyingKey, SigningKey
 from p2pnetwork.node import Node
@@ -147,20 +149,20 @@ def main():
             outputs = block['tx']['output']
 
             for outputIdx in range(len(outputs)):
-                if (outputs[outputIdx]['pub_key'] == 'c26cfef538dd15b6f52593262403de16fa2dc7acb21284d71bf0a28f5792581b4a6be89d2a7ec1d4f7849832fe7b4daa' and outputIdx == inputIDX):
+                # if (outputs[outputIdx]['pub_key'] == "c26cfef538dd15b6f52593262403de16fa2dc7acb21284d71bf0a28f5792581b4a6be89d2a7ec1d4f7849832fe7b4daa"):
+                if (outputs[outputIdx]['pub_key'] == vk.to_string().hex()):
                     curID = block['id']
+                    print("curID: ", curID)
+                    
                     
                     if transactionsList == {}:
-                        transactionsList[curID] = (outputs[outputIdx]['value'], inputIDX)
+                        transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
                         latestTransaction = curID
                         ltidx = outputIdx
-                    
-                    else:
-                        transactionsList[curID] = (outputs[outputIdx]['value'], inputIDX)
+                    elif outputIdx == inputIDX:
+                        transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
                         latestTransaction = curID
                         ltidx = outputIdx
-                        # print("transactionsList: ", transactionsList)
-                        # print()
                         if inputID in transactionsList:
                             del transactionsList[inputID]
         
@@ -170,6 +172,7 @@ def main():
             myMoney += transactionsDictValues[i][0]
         print("My money: ", myMoney)
         print("My transactions: ", (transactionsList))
+        print(len(transactionsList))
 
         if myMoney < int(amount):
             print("Error: Insufficient funds.")
@@ -222,7 +225,21 @@ def main():
             client.send_to_nodes(newTransaction)
             print("Transaction broadcasted to the network.")
             return
-                
+        
+    def mine_transaction(utx, prev):
+        nonce = Random.new().read(AES.block_size).hex()
+        while( int( hashlib.sha256(json.dumps(utx, sort_keys=True).encode('utf8') + prev.encode('utf-8') + nonce.encode('utf-8')).hexdigest(), 16) > DIFFICULTY):
+            nonce = Random.new().read(AES.block_size).hex()
+        pow = hashlib.sha256(json.dumps(utx, sort_keys=True).encode('utf8') + prev.encode('utf-8') + nonce.encode('utf-8')).hexdigest()
+        return pow, nonce
+    
+    def mineBlock(client):
+        serverUTX = client.utx
+        clientBlock = client.blockchain
+
+
+        prev = clientBlock[-1]
+
         
 
     while True:
@@ -231,7 +248,7 @@ def main():
         print("=" * (int(len(slogan)/2) - int(len(' ZachCoin™')/2)), 'ZachCoin™', "=" * (int(len(slogan)/2) - int(len('ZachCoin™ ')/2)))
         print(slogan)
         print("=" * len(slogan),'\n')
-        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\t3: Create a new transaction\n\nEnter your choice -> ")
+        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\t3: Create a new transaction\n\t4: Mine a block\n\nEnter your choice -> ")
         try:
             x = int(x)
         except:
@@ -253,6 +270,10 @@ def main():
             print("Creating transaction...")
             #Create a transaction
             createTransaction(client, recipient, amount)
+        elif x == 4:
+            print("Mining a block...")
+            #Mine a block
+            mineBlock(client)
             
         # TODO: Add options for creating and mining transactions
         # as well as any other additional features
