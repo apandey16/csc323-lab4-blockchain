@@ -116,27 +116,10 @@ def main():
     print("Starting ZachCoin™ Client:", sys.argv[1])
     time.sleep(2)
 
-    # def createTransaction(client, recipient, amount):
-    #     myMoney = 0
-    #     nIdx = None
-
-    #     for block in reversed(client.blockchain):
-    #         outputs = block['tx']['output']
-    #         for outputIdx in range(len(outputs)):
-    #             if outputs[outputIdx]['pub_key'] == vk.to_string().hex():
-    #                 myMoney += outputs[outputIdx]["value"]
-    #                 break
-    #     print("My money: ", myMoney)
-                
-    #     if myMoney < int(amount):
-    #         print("Error: Insufficient funds.")
-    #         return
-    #     # else: 
-
     def createTransaction(client, recipient, amount):
         # key is the id of the block, value is the (output, idx)
         transactionsList = {}
-        latestTransaction, ltidx = None, None
+        # latestTransaction, ltidx = None, None
 
         # need to check inputID 
         for block in client.blockchain:
@@ -152,83 +135,108 @@ def main():
                 # if (outputs[outputIdx]['pub_key'] == "c26cfef538dd15b6f52593262403de16fa2dc7acb21284d71bf0a28f5792581b4a6be89d2a7ec1d4f7849832fe7b4daa"):
                 if (outputs[outputIdx]['pub_key'] == vk.to_string().hex()):
                     curID = block['id']
-                    print("curID: ", curID)
-                    
-                    
+                    # print("curID: ", curID)
                     if transactionsList == {}:
                         transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
-                        latestTransaction = curID
-                        ltidx = outputIdx
                     elif outputIdx == inputIDX:
                         transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
-                        latestTransaction = curID
-                        ltidx = outputIdx
                         if inputID in transactionsList:
                             del transactionsList[inputID]
         
         transactionsDictValues = list(transactionsList.values())
+        transactionsDictKeys = list(transactionsList.keys())
+
+        validPrevTransaction = None
+        validPrevTransactionIdx = None
         myMoney = 0
         for i in range(len(transactionsDictValues)):
-            myMoney += transactionsDictValues[i][0]
-        print("My money: ", myMoney)
-        print("My transactions: ", (transactionsList))
-        print(len(transactionsList))
+            if transactionsDictValues[i][0] >= int(amount):
+                validPrevTransaction = transactionsDictKeys[i]
+                validPrevTransactionIdx = transactionsDictValues[i][1]
+                myMoney = transactionsDictValues[i][0]
+                break
 
-        if myMoney < int(amount):
-            print("Error: Insufficient funds.")
+        if validPrevTransaction == None:
+            print("Error: No valid previous transaction found.")
             return
-        elif int(amount) <= 0:
-            print("Error: Invalid amount.")
-            return
+        
+        print("validPrevTransaction: ", validPrevTransaction)
+        print("validPrevTransactionIdx: ", validPrevTransactionIdx)
+        print("Money in Transaction: ", myMoney)
+
+        newTransaction = {}
+        input = {
+                    "input": 
+                        {
+                            "id": validPrevTransaction,
+                            "n": validPrevTransactionIdx
+                        }
+                }
+
+        # create a transaction
+        if myMoney - int(amount) > 0:
+            newTransaction = {
+                "type": client.TRANSACTION,
+                "input": 
+                    {
+                        "id": validPrevTransaction,
+                        "n": validPrevTransactionIdx
+                    },
+                "sig": sk.sign(json.dumps(input).encode()).hex(),
+                "output": [
+                    {
+                        "value": int(amount),
+                        "pub_key": recipient
+                    },
+                    {
+                        "value": myMoney - int(amount),
+                        "pub_key": vk.to_string().hex()
+                    }
+                ]
+            } 
         else:
-            newTransaction = {}
-
-            # create a transaction
-            if myMoney - int(amount) > 0:
-                newTransaction = {
-                    "type": client.TRANSACTION,
-                    "input": {
-                        "id": latestTransaction,
-                        "n": ltidx
-                    },
-                    "sig": sk.sign(json.dumps(newTransaction).encode()).hex(),
-                    "output": [
-                        {
-                            "value": int(amount),
-                            "pub_key": recipient
-                        },
-                        {
-                            "value": myMoney - int(amount),
-                            "pub_key": vk.to_string().hex()
-                        }
-                    ]
-                } 
-            else:
-                newTransaction = {
-                    "type": client.TRANSACTION,
-                    "input": {
-                        "id": latestTransaction,
-                        "n": ltidx
-                    },
-                    "sig": sk.sign(json.dumps(newTransaction).encode()).hex(),
-                    "output": [
-                        {
-                            "value": int(amount),
-                            "pub_key": recipient
-                        }
-                    ]
-                } 
-                
-            # add the transaction to the UTX pool
-            client.utx.append(newTransaction)
-            print("Transaction created: ", newTransaction)
-            client.send_to_nodes(newTransaction)
-            print("Transaction broadcasted to the network.")
-            return
+            newTransaction = {
+                "type": client.TRANSACTION,
+                "input": {
+                    "id": validPrevTransaction,
+                    "n": validPrevTransactionIdx
+                },
+                "sig": sk.sign(json.dumps(input).encode()).hex(),
+                "output": [
+                    {
+                        "value": int(amount),
+                        "pub_key": recipient
+                    }
+                ]
+            } 
+            
+        # add the transaction to the UTX pool
+        client.utx.append(newTransaction)
+        print("Transaction created: ", newTransaction)
+        client.send_to_nodes(newTransaction)
+        print("Transaction broadcasted to the network.")
+        return
+        
+    def fieldsExist(utx):
+        # check if the fields in the transaction exist
+        neededFields = {'type', 'input', 'sig', 'output'}
+        inputFields = {'id', 'n'}
+        outputFields = {'value', 'pub_key'}
+        for field in neededFields:
+            if field not in utx:
+                return False
+        for field in inputFields:
+            if field not in utx['input']:
+                return False
+        for output in utx['output']:
+            for field in outputFields:
+                if field not in output:
+                    return False
+        return True
         
     def mine_transaction(utx, prev):
         nonce = Random.new().read(AES.block_size).hex()
-        while( int( hashlib.sha256(json.dumps(utx, sort_keys=True).encode('utf8') + prev.encode('utf-8') + nonce.encode('utf-8')).hexdigest(), 16) > DIFFICULTY):
+        while( int( hashlib.sha256(json.dumps(utx, sort_keys=True).encode('utf8') + prev.encode('utf-8') + nonce.encode('utf-8')).hexdigest(), 16) > client.DIFFICULTY):
             nonce = Random.new().read(AES.block_size).hex()
         pow = hashlib.sha256(json.dumps(utx, sort_keys=True).encode('utf8') + prev.encode('utf-8') + nonce.encode('utf-8')).hexdigest()
         return pow, nonce
@@ -236,9 +244,39 @@ def main():
     def mineBlock(client):
         serverUTX = client.utx
         clientBlock = client.blockchain
+        lastBlock = clientBlock[-1]
+        prev = lastBlock['id']
+        curUtx = None
 
+        # check if the fields in the transaction exist
 
-        prev = clientBlock[-1]
+        for utx in serverUTX:
+            if fieldsExist(utx) == True:
+                curUtx = utx
+                break
+        if curUtx == None:
+            print("Error: No valid transactions to mine.")
+            return
+        
+        # miners must add a coinbase transaction as the final output of the unverified transaction that they are mining
+        print(curUtx) 
+        coinbase = {
+            "value": client.COINBASE,
+            "pub_key": vk.to_string().hex()
+        }
+        curUtx['output'].append(coinbase)
+        
+        print(curUtx)
+
+        print("Mining transaction...")
+        pow, nonce = mine_transaction(curUtx, prev)
+        print("POW: ", pow)
+        print("Nonce: ", nonce)
+        return
+
+        # Can be generated once tx is made
+        # id =  hashlib.sha256(json.dumps(zc_block['tx'], sort_keys=True).encode('utf8')).hexdigest()
+
 
         
 
