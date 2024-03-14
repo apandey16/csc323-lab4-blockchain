@@ -96,8 +96,7 @@ class ZachCoinClient (Node):
             return False
         if block['id'] != hashlib.sha256(json.dumps(block['tx'], sort_keys=True).encode('utf8')).hexdigest():
             return False
-        # HOW TO CHECK IF THE POW IS VALID?
-        if int(block['pow'], 16) > self.DIFFICULTY:
+        if hashlib.sha256(json.dumps(block['tx'], sort_keys=True).encode('utf8') + block['prev'].encode('utf-8') + block['nonce'].encode('utf-8')).hexdigest() > self.DIFFICULTY:
             return False
         if block['prev'] != self.blockchain[-1]['id']:
             return False
