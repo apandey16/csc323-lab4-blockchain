@@ -223,15 +223,19 @@ def main():
         inputFields = {'id', 'n'}
         outputFields = {'value', 'pub_key'}
         print("Validating Fields...")
+        print(utx)
         for field in neededFields:
             if field not in utx:
+                print("Error: Missing field in transaction.")
                 return False
         for field in inputFields:
             if field not in utx['input']:
+                print("Error: Missing field in input.")
                 return False
         for output in utx['output']:
             for field in outputFields:
                 if field not in output:
+                    print("Error: Missing field in output.")
                     return False
         
         print("Validating Transaction Type...")
@@ -257,16 +261,20 @@ def main():
                         vk = VerifyingKey.from_string(bytes.fromhex(pub_key))
 
                         try: 
-                            vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8'))
+                            # Maybe assert
+                            assert vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8'))
                             # validBlock = True
                             refBlock = block
                             break
                         except Exception as e:
+                            print("Error: Signature verification failed.")
                             continue
                     else:
+                        "print fails at output index."
                         return False
         
         if refBlock == None:
+            print("ref block failure")
             return False
         
         # check if the input is unspent
@@ -274,6 +282,7 @@ def main():
             inputID = block['id']
             inputIDX = utx['input']['n']
             if inputID == refBlock['id'] and inputIDX == utx['input']['n']:
+                print("Input is spent.")
                 return False
             
         # check if the input val is equal to the sum of the output
@@ -286,7 +295,8 @@ def main():
                 print("One or more outpur values is less than or equal to 0.")
                 return False
             outputSum += outputVal
-
+        print("InputVal: ", inputVal)
+        print("OutputSum: ", outputSum)
         if inputVal != outputSum:
             print("Input coins and output coins do not match.")
             return False
@@ -312,18 +322,34 @@ def main():
         prev = lastBlock['id']
         curUtx = None
 
-        curUtx = serverUTX[-1]
+        # curUtx = serverUTX[-1]
+
+        # curUtx = {"tx": {
+        #         "type": 1,
+        #         "input": {
+        #             "id": "64ee0efe099881924cd5ecc22563bedd47a45d2537de5a08bc0dee6403076490",
+        #             "n": 2
+        #         },
+        #         "sig": "de099e1a8a40d5bfee5a69a2b4b6383bfbfdea26ded8848e065a4031953afabc36da7ef8ce520c0ffe9c88346fd6d373",
+        #         "output": [
+        #             {
+        #             "value": 50,
+        #             "pub_key": "3b9306efea63c7cdff03315c11b30c9e4b4c6a1d7f803abf74dbe69b6a4d6bfbd02f25a7990a738618be58da39620480"
+        #             }
+        #             ]}}
         
-        if fieldsValidation(client, curUtx) == False:
-            print("Error: Invalid transaction.")
-            return
+        # curUtx = curUtx['tx']
+        
+        # if fieldsValidation(client, curUtx) == False:
+        #     print("Error: Invalid transaction.")
+        #     return
 
         # check if the fields in the transaction exist
 
-        # for utx in reversed(serverUTX):
-        #     if fieldsValidation(client, utx) == True:
-        #         curUtx = utx
-        #         break
+        for utx in reversed(serverUTX):
+            if fieldsValidation(client, utx) == True:
+                curUtx = utx
+                break
 
         if curUtx == None:
             print("Error: No valid transactions to mine.")
@@ -364,14 +390,51 @@ def main():
         return
 
         # Can be generated once tx is made        
+    
+    def wallet(client):
+        transactionsList = {}
+        # latestTransaction, ltidx = None, None
 
+        # need to check inputID 
+        for block in client.blockchain:
+            inputID = block['tx']['input']['id']
+            inputIDX = block['tx']['input']['n']
+
+            # print("inputID: ", inputID)
+            # print("inputIDX: ", inputIDX)
+
+            outputs = block['tx']['output']
+
+            for outputIdx in range(len(outputs)):
+                # if (outputs[outputIdx]['pub_key'] == "c26cfef538dd15b6f52593262403de16fa2dc7acb21284d71bf0a28f5792581b4a6be89d2a7ec1d4f7849832fe7b4daa"):
+                if (outputs[outputIdx]['pub_key'] == vk.to_string().hex()):
+                    curID = block['id']
+                    # print("curID: ", curID)
+                    if transactionsList == {}:
+                        transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
+                    elif outputIdx == inputIDX:
+                        transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
+                        if inputID in transactionsList:
+                            del transactionsList[inputID]
+        
+        transactionsDictValues = list(transactionsList.values())
+        transactionsDictKeys = list(transactionsList.keys())
+        myMoney = 0
+        for i in range(len(transactionsDictValues)):
+            print("Transaction ID: ", transactionsDictKeys[i])
+            print("Transaction Value: ", transactionsDictValues[i][0])
+            print()
+            myMoney += transactionsDictValues[i][0]
+        print("Total ZachCoins™ in the blockchain: ", myMoney)
+        return
+        
     while True:
         os.system('cls' if os.name=='nt' else 'clear')
         slogan = " You can't spell \"It's a Ponzi scheme!\" without \"ZachCoin\" "
         print("=" * (int(len(slogan)/2) - int(len(' ZachCoin™')/2)), 'ZachCoin™', "=" * (int(len(slogan)/2) - int(len('ZachCoin™ ')/2)))
         print(slogan)
         print("=" * len(slogan),'\n')
-        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\t3: Create a new transaction\n\t4: Mine a block\n\nEnter your choice -> ")
+        x = input("\t0: Print keys\n\t1: Print blockchain\n\t2: Print UTX pool\n\t3: Create a new transaction\n\t4: Mine a block\n\t5: Look into wallet\n\nEnter your choice -> ")
         try:
             x = int(x)
         except:
@@ -397,6 +460,9 @@ def main():
             print("Mining a block...")
             #Mine a block
             mineBlock(client)
+        elif x == 5:
+            print("Accessing Wallet...")
+            wallet(client)
             
         # TODO: Add options for creating and mining transactions
         # as well as any other additional features
