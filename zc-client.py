@@ -1,8 +1,9 @@
 from Crypto.Cipher import AES
 from Crypto import Random
-import sys, time, json, os, hashlib
+import sys, time, os, hashlib
 from ecdsa import VerifyingKey, SigningKey
 from p2pnetwork.node import Node
+import json
 
 SERVER_ADDR = "zachcoin.net"
 SERVER_PORT = 9067
@@ -182,7 +183,7 @@ def main():
                         "id": validPrevTransaction,
                         "n": validPrevTransactionIdx
                     },
-                "sig": sk.sign(json.dumps(input).encode()).hex(),
+                "sig": sk.sign(json.dumps(input["input"]).encode()).hex(),
                 "output": [
                     {
                         "value": int(amount),
@@ -201,7 +202,7 @@ def main():
                     "id": validPrevTransaction,
                     "n": validPrevTransactionIdx
                 },
-                "sig": sk.sign(json.dumps(input).encode()).hex(),
+                "sig": sk.sign(json.dumps(input["input"]).encode()).hex(),
                 "output": [
                     {
                         "value": int(amount),
@@ -301,7 +302,7 @@ def main():
             print("Input coins and output coins do not match.")
             return False
     
-        if (len(utx['output']) >= 2 or len(utx['output']) == 0):
+        if (len(utx['output']) > 2 or len(utx['output']) == 0):
             print("Invalid number of outputs in transaction.")
             return False
         # check number of outputs AND each output is greater than 0
@@ -322,7 +323,7 @@ def main():
         prev = lastBlock['id']
         curUtx = None
 
-        # curUtx = serverUTX[-1]
+        # # curUtx = serverUTX[-1]
 
         # curUtx = {"tx": {
         #         "type": 1,
