@@ -73,6 +73,10 @@ class ZachCoinClient (Node):
                     print("new utx added")
                     self.utx = data['utxpool']
                 elif data['type'] == self.BLOCK:
+                    blockTx = data['tx']
+                    for utx in reversed(self.utx):
+                        if utx['input']['id'] == blockTx['input']['id']:
+                            self.utx.remove(utx)
                     isValid = self.validate_block(data)
                     if isValid:
                         self.blockchain.append(data)
@@ -163,7 +167,7 @@ class ZachCoinClient (Node):
         outputSum = 0
 
         for output in utx['output']:
-            outputVal = output['value']
+            outputVal = int(output['value'])
             if outputVal <= 0:
                 return False
             outputSum += outputVal
