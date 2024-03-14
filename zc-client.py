@@ -70,7 +70,15 @@ class ZachCoinClient (Node):
                 elif data['type'] == self.BLOCKCHAIN:
                     self.blockchain = data['blockchain']
                 elif data['type'] == self.UTXPOOL:
+                    print("new utx added")
                     self.utx = data['utxpool']
+                elif data['type'] == self.BLOCK:
+                    isValid = self.validate_block(data)
+                    if isValid:
+                        self.blockchain.append(data)
+                        print("new block added")
+                    else:
+                        print("Invalid block received.")
                 #TODO: Validate blocks
 
     def node_disconnect_with_outbound_node(self, connected_node):
@@ -78,6 +86,95 @@ class ZachCoinClient (Node):
         
     def node_request_to_stop(self):
         print("node is requested to stop!")
+    
+    def validate_block(self, block):
+        if block['type'] != self.BLOCK:
+            return False
+        if block['id'] != hashlib.sha256(json.dumps(block['tx'], sort_keys=True).encode('utf8')).hexdigest():
+            return False
+        # HOW TO CHECK IF THE POW IS VALID?
+        if int(block['pow'], 16) > self.DIFFICULTY:
+            return False
+        if block['prev'] != self.blockchain[-1]['id']:
+            return False
+        if self.fieldsValidation(block['tx']) == False:
+            return False
+        return True
+        
+    def fieldsValidation(self, utx):
+        # check if the fields in the transaction exist
+        neededFields = {'type', 'input', 'sig', 'output'}
+        inputFields = {'id', 'n'}
+        outputFields = {'value', 'pub_key'}
+        
+        for field in neededFields:
+            if field not in utx:
+                return False
+        for field in inputFields:
+            if field not in utx['input']:
+                return False
+        for output in utx['output']:
+            for field in outputFields:
+                if field not in output:
+                    return False
+        
+        # Check if the type is TRANSACTION
+        if utx['type'] != self.TRANSACTION:
+            return False
+        
+        # Check if the input is a valid block in the blockchain
+        inputID = utx['input']['id']
+        inputIDX = utx['input']['n']
+        blockchain = self.blockchain
+        blkChainPtr = 0
+        refBlock = None
+
+        for block in blockchain:
+            blkChainPtr += 1
+            if block['id'] == inputID:
+                # get pk paid to, look at input look at sig of utx and try to verify
+                    if inputIDX < len(block['tx']['output']):
+                        outputReferenced = block['tx']['output'][inputIDX]
+                        pub_key = outputReferenced['pub_key']
+                        vk = VerifyingKey.from_string(bytes.fromhex(pub_key))
+
+                        try: 
+                            assert vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8'))
+                            # validBlock = True
+                            refBlock = block
+                            break
+                        except Exception as e:
+                            continue
+                    else:
+                        return False
+        
+        if refBlock == None:
+            return False
+        
+        # check if the input is unspent
+        for block in blockchain[blkChainPtr:]:
+            inputID = block['id']
+            inputIDX = utx['input']['n']
+            if inputID == refBlock['id'] and inputIDX == utx['input']['n']:
+                return False
+            
+        # check if the input val is equal to the sum of the output
+        inputVal = refBlock['tx']['output'][inputIDX]['value']
+        outputSum = 0
+
+        for output in utx['output']:
+            outputVal = output['value']
+            if outputVal <= 0:
+                return False
+            outputSum += outputVal
+        if inputVal != outputSum:
+            return False
+    
+        if (len(utx['output']) > 2 or len(utx['output']) == 0):
+            return False
+
+        return True
+        
 
 
 def main():
@@ -223,6 +320,7 @@ def main():
         neededFields = {'type', 'input', 'sig', 'output'}
         inputFields = {'id', 'n'}
         outputFields = {'value', 'pub_key'}
+        print()
         print("Validating Fields...")
         print(utx)
         for field in neededFields:
@@ -256,13 +354,16 @@ def main():
             blkChainPtr += 1
             if block['id'] == inputID:
                 # get pk paid to, look at input look at sig of utx and try to verify
-                    if len(block['tx']['output']) - 1 <= inputIDX:
+                    if inputIDX < len(block['tx']['output']):
+                    # try: 
                         outputReferenced = block['tx']['output'][inputIDX]
                         pub_key = outputReferenced['pub_key']
                         vk = VerifyingKey.from_string(bytes.fromhex(pub_key))
 
                         try: 
                             # Maybe assert
+                            print("assert")
+                            print(vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8')))
                             assert vk.verify(bytes.fromhex(utx['sig']), json.dumps(utx['input'], sort_keys=True).encode('utf8'))
                             # validBlock = True
                             refBlock = block
@@ -270,6 +371,9 @@ def main():
                         except Exception as e:
                             print("Error: Signature verification failed.")
                             continue
+                    # except:
+                    #     print("Error: Invalid output index.")
+                    #     return False
                     else:
                         "print fails at output index."
                         return False
@@ -291,7 +395,7 @@ def main():
         outputSum = 0
 
         for output in utx['output']:
-            outputVal = output['value']
+            outputVal = int(output['value'])
             if outputVal <= 0:
                 print("One or more outpur values is less than or equal to 0.")
                 return False
@@ -318,32 +422,8 @@ def main():
     
     def mineBlock(client):
         serverUTX = client.utx
-        clientBlock = client.blockchain
-        lastBlock = clientBlock[-1]
-        prev = lastBlock['id']
+        
         curUtx = None
-
-        # # curUtx = serverUTX[-1]
-
-        # curUtx = {"tx": {
-        #         "type": 1,
-        #         "input": {
-        #             "id": "64ee0efe099881924cd5ecc22563bedd47a45d2537de5a08bc0dee6403076490",
-        #             "n": 2
-        #         },
-        #         "sig": "de099e1a8a40d5bfee5a69a2b4b6383bfbfdea26ded8848e065a4031953afabc36da7ef8ce520c0ffe9c88346fd6d373",
-        #         "output": [
-        #             {
-        #             "value": 50,
-        #             "pub_key": "3b9306efea63c7cdff03315c11b30c9e4b4c6a1d7f803abf74dbe69b6a4d6bfbd02f25a7990a738618be58da39620480"
-        #             }
-        #             ]}}
-        
-        # curUtx = curUtx['tx']
-        
-        # if fieldsValidation(client, curUtx) == False:
-        #     print("Error: Invalid transaction.")
-        #     return
 
         # check if the fields in the transaction exist
 
@@ -366,6 +446,10 @@ def main():
         curUtx['output'].append(coinbase)
         
         print(curUtx)
+        
+        clientBlock = client.blockchain
+        lastBlock = clientBlock[-1]
+        prev = lastBlock['id']
 
         print("Mining transaction...")
         pow, nonce = mine_transaction(curUtx, prev)
@@ -384,7 +468,7 @@ def main():
         }
 
         # add the block to the blockchain
-        client.blockchain.append(newBlock)
+        # client.blockchain.append(newBlock)
         print("Block mined: ", newBlock)
         client.send_to_nodes(newBlock)
         print("Block broadcasted to the network.")
@@ -394,7 +478,6 @@ def main():
     
     def wallet(client):
         transactionsList = {}
-        # latestTransaction, ltidx = None, None
 
         # need to check inputID 
         for block in client.blockchain:
@@ -417,6 +500,15 @@ def main():
                         transactionsList[curID] = (outputs[outputIdx]['value'], outputIdx)
                         if inputID in transactionsList:
                             del transactionsList[inputID]
+                    elif len(outputs) > 1:
+                        if len(outputs) == 3:
+                            transactionsList[curID + " Remainder"] = (outputs[outputIdx]['value'], outputIdx)
+                            if inputID + "Remainder" in transactionsList:
+                                del transactionsList[inputID]
+                        else:
+                            transactionsList[curID + " Mined"] = (outputs[outputIdx]['value'], outputIdx)
+                            if inputID + "Mined" in transactionsList:
+                                del transactionsList[inputID]
         
         transactionsDictValues = list(transactionsList.values())
         transactionsDictKeys = list(transactionsList.keys())
